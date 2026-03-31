@@ -42,6 +42,9 @@ def classify_intent(query: str) -> Literal["reservation", "cancel", "info"]:
     """
     q = query.lower()
 
+    if "cancel" in q:
+        return "cancel"
+
     reservation_keywords = [
         "book",
         "booking",
