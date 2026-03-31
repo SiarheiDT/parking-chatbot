@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypedDict
+
+from langgraph.graph import END, StateGraph
 
 from app.config import get_config
 from app.db.connection import get_connection
-from app.db.repositories import save_reservation
+from app.db.repositories import (
+    cancel_upcoming_reservation_by_plate,
+    has_overlapping_active_reservation,
+    save_reservation,
+)
 from app.guardrails.filter import contains_sensitive_data, is_blocked_request
 from app.rag.retriever import retrieve
 
@@ -13,7 +20,23 @@ from app.rag.retriever import retrieve
 config = get_config()
 
 
-def classify_intent(query: str) -> str:
+SUPPORTED_DATETIME_FORMATS = (
+    "%Y-%m-%d %H:%M",
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y %I:%M%p",
+    "%d/%m/%Y %I:%M %p",
+)
+
+
+class ChatState(TypedDict):
+    query: str
+    session: dict[str, Any]
+    intent: Literal["reservation", "cancel", "info"] | None
+    response: str
+    blocked: bool
+
+
+def classify_intent(query: str) -> Literal["reservation", "cancel", "info"]:
     """
     Very simple intent classification for Stage 1.
     """
@@ -33,6 +56,16 @@ def classify_intent(query: str) -> str:
 
     if any(keyword in q for keyword in reservation_keywords):
         return "reservation"
+
+    cancel_keywords = [
+        "cancel reservation",
+        "cancel booking",
+        "cancel my booking",
+        "cancel my reservation",
+        "cancel",
+    ]
+    if any(keyword in q for keyword in cancel_keywords):
+        return "cancel"
 
     return "info"
 
@@ -136,6 +169,17 @@ def _get_availability(db_path: Path) -> str:
     return f"Currently, {available_spaces} parking spaces are available. Last updated at: {updated_at}."
 
 
+def _normalize_datetime_input(value: str) -> str | None:
+    raw = value.strip()
+    for fmt in SUPPORTED_DATETIME_FORMATS:
+        try:
+            dt = datetime.strptime(raw, fmt)
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            continue
+    return None
+
+
 def handle_reservation(session: dict[str, Any], user_input: str | None = None) -> str:
     """
     Collect reservation data step by step and persist it to SQLite.
@@ -161,15 +205,54 @@ def handle_reservation(session: dict[str, Any], user_input: str | None = None) -
     if step == "car_plate":
         session["data"]["car_plate"] = user_input
         session["step"] = "start_datetime"
-        return "Please provide the reservation start date and time."
+        return (
+            "Please provide the reservation start date and time "
+            "(format: YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM)."
+        )
 
     if step == "start_datetime":
-        session["data"]["start_datetime"] = user_input
+        normalized_start = _normalize_datetime_input(user_input or "")
+        if not normalized_start:
+            return (
+                "Invalid date/time format. Use one of: "
+                "YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM."
+            )
+        session["data"]["start_datetime"] = normalized_start
         session["step"] = "end_datetime"
-        return "Please provide the reservation end date and time."
+        return (
+            "Please provide the reservation end date and time "
+            "(format: YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM)."
+        )
 
     if step == "end_datetime":
-        session["data"]["end_datetime"] = user_input
+        normalized_end = _normalize_datetime_input(user_input or "")
+        if not normalized_end:
+            return (
+                "Invalid date/time format. Use one of: "
+                "YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM."
+            )
+
+        start_dt = datetime.strptime(session["data"]["start_datetime"], "%Y-%m-%d %H:%M")
+        end_dt = datetime.strptime(normalized_end, "%Y-%m-%d %H:%M")
+        if end_dt <= start_dt:
+            return "Reservation end date/time must be later than start date/time."
+
+        session["data"]["end_datetime"] = normalized_end
+
+        if has_overlapping_active_reservation(
+            db_path=config.DB_PATH,
+            car_plate=session["data"]["car_plate"],
+            start_datetime=session["data"]["start_datetime"],
+            end_datetime=session["data"]["end_datetime"],
+        ):
+            session["data"].pop("start_datetime", None)
+            session["data"].pop("end_datetime", None)
+            session["step"] = "start_datetime"
+            return (
+                "An active reservation for this car plate already overlaps with the requested period. "
+                "Please provide a different reservation start date and time "
+                "(format: YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM)."
+            )
 
         save_reservation(
             db_path=config.DB_PATH,
@@ -195,22 +278,150 @@ def handle_reservation(session: dict[str, Any], user_input: str | None = None) -
     return "Reservation flow was reset. Please try again."
 
 
-def route(query: str, session: dict[str, Any]) -> str:
+def handle_cancellation(session: dict[str, Any], user_input: str | None = None) -> str:
     """
-    Main orchestration entrypoint.
+    Cancel a reservation by car plate if reservation start is in the future.
     """
+    if not session["cancel_active"]:
+        session["cancel_active"] = True
+        session["cancel_step"] = "car_plate"
+        return "Please provide your car plate number to cancel your reservation."
+
+    if session["cancel_step"] == "car_plate":
+        plate = (user_input or "").strip()
+        if not plate:
+            return "Car plate cannot be empty. Please provide your car plate number."
+
+        success, message = cancel_upcoming_reservation_by_plate(config.DB_PATH, plate)
+        session["cancel_active"] = False
+        session["cancel_step"] = None
+        return message if success else message
+
+    session["cancel_active"] = False
+    session["cancel_step"] = None
+    return "Cancellation flow was reset. Please try again."
+
+
+def _guardrails_node(state: ChatState) -> ChatState:
+    query = state["query"]
+
     if contains_sensitive_data(query):
-        return "Request blocked due to sensitive data."
+        state["blocked"] = True
+        state["response"] = "Request blocked due to sensitive data."
+        return state
 
     if is_blocked_request(query):
-        return "I cannot provide private or internal information."
+        state["blocked"] = True
+        state["response"] = "I cannot provide private or internal information."
+        return state
+
+    state["blocked"] = False
+    return state
+
+
+def _guardrails_route(state: ChatState) -> str:
+    return "blocked" if state["blocked"] else "continue"
+
+
+def _intent_node(state: ChatState) -> ChatState:
+    session = state["session"]
+    query = state["query"]
+
+    if session["cancel_active"]:
+        state["intent"] = "cancel"
+        return state
 
     if session["reservation_active"]:
-        return handle_reservation(session, query)
+        state["intent"] = "reservation"
+        return state
 
-    intent = classify_intent(query)
+    state["intent"] = classify_intent(query)
+    return state
 
-    if intent == "reservation":
-        return handle_reservation(session)
 
-    return handle_info(query)
+def _intent_route(state: ChatState) -> str:
+    return state["intent"] or "info"
+
+
+def _reservation_node(state: ChatState) -> ChatState:
+    session = state["session"]
+    query = state["query"]
+
+    if session["reservation_active"]:
+        state["response"] = handle_reservation(session, query)
+    else:
+        state["response"] = handle_reservation(session)
+    return state
+
+
+def _info_node(state: ChatState) -> ChatState:
+    state["response"] = handle_info(state["query"])
+    return state
+
+
+def _cancel_node(state: ChatState) -> ChatState:
+    session = state["session"]
+    query = state["query"]
+
+    if session["cancel_active"]:
+        state["response"] = handle_cancellation(session, query)
+    else:
+        state["response"] = handle_cancellation(session)
+    return state
+
+
+def _build_graph():
+    graph = StateGraph(ChatState)
+    graph.add_node("guardrails", _guardrails_node)
+    graph.add_node("intent", _intent_node)
+    graph.add_node("reservation", _reservation_node)
+    graph.add_node("cancel", _cancel_node)
+    graph.add_node("info", _info_node)
+
+    graph.set_entry_point("guardrails")
+    graph.add_conditional_edges(
+        "guardrails",
+        _guardrails_route,
+        {
+            "blocked": END,
+            "continue": "intent",
+        },
+    )
+    graph.add_conditional_edges(
+        "intent",
+        _intent_route,
+        {
+            "reservation": "reservation",
+            "cancel": "cancel",
+            "info": "info",
+        },
+    )
+    graph.add_edge("reservation", END)
+    graph.add_edge("cancel", END)
+    graph.add_edge("info", END)
+    return graph.compile()
+
+
+CHAT_FLOW_GRAPH = _build_graph()
+
+
+def route(query: str, session: dict[str, Any]) -> str:
+    """
+    Main orchestration entrypoint powered by LangGraph.
+    """
+    session.setdefault("reservation_active", False)
+    session.setdefault("step", None)
+    session.setdefault("data", {})
+    session.setdefault("cancel_active", False)
+    session.setdefault("cancel_step", None)
+
+    result = CHAT_FLOW_GRAPH.invoke(
+        {
+            "query": query,
+            "session": session,
+            "intent": None,
+            "response": "",
+            "blocked": False,
+        }
+    )
+    return result["response"]

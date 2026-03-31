@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-
+from app.paths import RAW_DATA_DIR
 from app.rag.embeddings import embed_text
 from app.rag.vector_store import WeaviateVectorStore
-from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parents[1]
 
 DATA_DIR = RAW_DATA_DIR
 
@@ -44,6 +40,10 @@ def ingest() -> None:
         store.create_schema()
 
         documents = load_documents()
+        if not documents:
+            print(f"No source markdown files found in: {DATA_DIR}")
+            return
+
         chunks = split_documents(documents)
 
         for chunk, source in chunks:

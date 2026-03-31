@@ -3,6 +3,8 @@ python-dotenv
 
 # LLM / RAG
 langchain
+langchain-text-splitters
+langgraph
 langchain-community
 openai
 tiktoken

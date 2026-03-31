@@ -26,7 +26,7 @@ class WeaviateVectorStore:
 
         self.client.collections.create(
             name=self.collection_name,
-            vectorizer_config=Configure.Vectorizer.none(),
+            vector_config=Configure.Vectors.self_provided(),
             properties=[
                 Property(name="content", data_type=DataType.TEXT),
                 Property(name="source", data_type=DataType.TEXT),
