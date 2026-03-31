@@ -1,0 +1,21 @@
+# Config
+python-dotenv
+
+# LLM / RAG
+langchain
+langchain-community
+openai
+tiktoken
+
+# Embeddings (optional but recommended)
+sentence-transformers
+
+# Testing
+pytest
+
+#Vector database
+weaviate-client
+
+sentence-transformers
+
+

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+.venv/
+
+# Env
+.env*
+!.env.example
+
+# Pytest
+.pytest_cache/
+
+# Data
+data/db/*.db
+data/processed/
+data/eval/retrieval_eval_report.json
+
+# OS
+.DS_Store
