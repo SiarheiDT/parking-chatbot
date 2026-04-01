@@ -61,7 +61,10 @@ infra/
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
 ```
+
+`.env.example` is a committed template, and `.env` is your local runtime configuration file.
 
 ### 2) Start Weaviate
 
