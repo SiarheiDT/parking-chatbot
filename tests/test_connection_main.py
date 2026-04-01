@@ -31,7 +31,8 @@ def test_main_runs_single_interaction_then_exits(
 ) -> None:
     main()
     assert mock_init_db.called
-    assert any("Welcome to Central Parking Wroclaw Assistant." in str(call) for call in mock_print.call_args_list)
+    printed = " ".join(" ".join(map(str, c.args)) for c in mock_print.call_args_list)
+    assert "Welcome to Central Parking Wroclaw Assistant" in printed
 
 
 @patch("app.main.initialize_database")
