@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from app.config import get_config
 from app.paths import RAW_DATA_DIR
 from app.rag.embeddings import embed_text
 from app.rag.vector_store import WeaviateVectorStore
 
+config = get_config()
 DATA_DIR = RAW_DATA_DIR
 
 def load_documents() -> list[tuple[str, str]]:
@@ -20,8 +22,8 @@ def load_documents() -> list[tuple[str, str]]:
 
 def split_documents(documents: list[tuple[str, str]]) -> list[tuple[str, str]]:
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=700,
-        chunk_overlap=100,
+        chunk_size=config.CHUNK_SIZE,
+        chunk_overlap=config.CHUNK_OVERLAP,
     )
 
     chunks: list[tuple[str, str]] = []

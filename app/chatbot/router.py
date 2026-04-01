@@ -27,6 +27,19 @@ SUPPORTED_DATETIME_FORMATS = (
     "%d/%m/%Y %I:%M %p",
 )
 
+FLOW_ABORT_KEYWORDS = {
+    "stop",
+    "refresh",
+    "reset",
+    "abort",
+    "quit",
+    "back",
+    "start over",
+    "cancel",
+    "cancel operation",
+    "cancel current operation",
+}
+
 
 class ChatState(TypedDict):
     query: str
@@ -104,7 +117,7 @@ def _build_concise_answer(docs: list[dict[str, Any]]) -> str:
     """
     top_chunks = []
     for doc in docs[:2]:
-        content = doc["page_content"].strip()
+        content = _drop_trailing_header_only_line(doc["page_content"])
         if content:
             top_chunks.append(content)
 
@@ -112,6 +125,19 @@ def _build_concise_answer(docs: list[dict[str, Any]]) -> str:
         return "Sorry, I couldn't find relevant information."
 
     return "Here is the relevant information I found:\n\n" + "\n\n".join(top_chunks)
+
+
+def _drop_trailing_header_only_line(content: str) -> str:
+    """
+    Remove a dangling markdown header at the end of chunk.
+    This avoids responses ending with '## Question...' without answer.
+    """
+    lines = [line for line in content.strip().splitlines()]
+    while lines and lines[-1].strip() == "":
+        lines.pop()
+    if lines and lines[-1].lstrip().startswith("##"):
+        lines.pop()
+    return "\n".join(lines).strip()
 
 
 def _get_working_hours(db_path: Path) -> str:
@@ -191,7 +217,10 @@ def handle_reservation(session: dict[str, Any], user_input: str | None = None) -
         session["reservation_active"] = True
         session["step"] = "first_name"
         session["data"] = {}
-        return "Let's start your reservation. Please provide your first name."
+        return (
+            "Let's start your reservation. Please provide your first name. "
+            "You can type 'stop', 'quit', 'back', or 'start over' to cancel current operation."
+        )
 
     step = session["step"]
 
@@ -288,7 +317,10 @@ def handle_cancellation(session: dict[str, Any], user_input: str | None = None) 
     if not session["cancel_active"]:
         session["cancel_active"] = True
         session["cancel_step"] = "car_plate"
-        return "Please provide your car plate number to cancel your reservation."
+        return (
+            "Please provide your car plate number to cancel your reservation. "
+            "You can type 'stop', 'quit', 'back', or 'start over' to cancel current operation."
+        )
 
     if session["cancel_step"] == "car_plate":
         plate = (user_input or "").strip()
@@ -303,6 +335,19 @@ def handle_cancellation(session: dict[str, Any], user_input: str | None = None) 
     session["cancel_active"] = False
     session["cancel_step"] = None
     return "Cancellation flow was reset. Please try again."
+
+
+def _is_abort_flow_command(query: str) -> bool:
+    normalized = " ".join(query.lower().strip().split())
+    return normalized in FLOW_ABORT_KEYWORDS
+
+
+def _reset_active_flows(session: dict[str, Any]) -> None:
+    session["reservation_active"] = False
+    session["step"] = None
+    session["data"] = {}
+    session["cancel_active"] = False
+    session["cancel_step"] = None
 
 
 def _guardrails_node(state: ChatState) -> ChatState:
@@ -417,6 +462,10 @@ def route(query: str, session: dict[str, Any]) -> str:
     session.setdefault("data", {})
     session.setdefault("cancel_active", False)
     session.setdefault("cancel_step", None)
+
+    if (session["reservation_active"] or session["cancel_active"]) and _is_abort_flow_command(query):
+        _reset_active_flows(session)
+        return "Current operation has been cancelled. You can enter a new request."
 
     result = CHAT_FLOW_GRAPH.invoke(
         {

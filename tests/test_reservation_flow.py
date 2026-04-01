@@ -206,6 +206,56 @@ def test_cancellation_flow_requires_non_empty_plate() -> None:
     assert session["cancel_step"] == "car_plate"
 
 
+def test_abort_command_resets_reservation_flow() -> None:
+    session = {
+        "reservation_active": True,
+        "step": "last_name",
+        "data": {"first_name": "John"},
+        "cancel_active": False,
+        "cancel_step": None,
+    }
+
+    response = route("stop", session)
+
+    assert "operation has been cancelled" in response.lower()
+    assert session["reservation_active"] is False
+    assert session["step"] is None
+    assert session["data"] == {}
+
+
+def test_abort_command_resets_cancellation_flow() -> None:
+    session = {
+        "reservation_active": False,
+        "step": None,
+        "data": {},
+        "cancel_active": True,
+        "cancel_step": "car_plate",
+    }
+
+    response = route("refresh", session)
+
+    assert "operation has been cancelled" in response.lower()
+    assert session["cancel_active"] is False
+    assert session["cancel_step"] is None
+
+
+def test_abort_alias_quit_resets_reservation_flow() -> None:
+    session = {
+        "reservation_active": True,
+        "step": "car_plate",
+        "data": {"first_name": "John", "last_name": "Smith"},
+        "cancel_active": False,
+        "cancel_step": None,
+    }
+
+    response = route("quit", session)
+
+    assert "operation has been cancelled" in response.lower()
+    assert session["reservation_active"] is False
+    assert session["step"] is None
+    assert session["data"] == {}
+
+
 def test_reservation_end_to_end_overlap_then_success(tmp_path) -> None:
     db_path = tmp_path / "test_parking.db"
     initialize_database(db_path)

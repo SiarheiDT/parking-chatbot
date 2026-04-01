@@ -1,6 +1,9 @@
 from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+from app.config import get_config
+
+config = get_config()
+model = SentenceTransformer(config.EMBEDDING_MODEL_NAME)
 
 
 def embed_text(text: str) -> list[float]:

@@ -3,18 +3,22 @@ from __future__ import annotations
 import weaviate
 from weaviate.classes.config import Configure, Property, DataType
 
+from app.config import get_config
+
+config = get_config()
+
 
 class WeaviateVectorStore:
     def __init__(self) -> None:
         self.client = weaviate.connect_to_custom(
-            http_host="localhost",
-            http_port=8081,
+            http_host=config.WEAVIATE_HTTP_HOST,
+            http_port=config.WEAVIATE_HTTP_PORT,
             http_secure=False,
-            grpc_host="localhost",
-            grpc_port=50051,
+            grpc_host=config.WEAVIATE_GRPC_HOST,
+            grpc_port=config.WEAVIATE_GRPC_PORT,
             grpc_secure=False,
         )
-        self.collection_name = "ParkingDoc"
+        self.collection_name = config.WEAVIATE_COLLECTION_NAME
 
     def close(self) -> None:
         self.client.close()
