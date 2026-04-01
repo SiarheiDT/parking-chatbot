@@ -12,7 +12,12 @@ def main() -> None:
     config = get_config()
     initialize_database(config.DB_PATH)
 
-    print("Parking Chatbot started. Type 'exit' to quit.")
+    print("Welcome to Central Parking Wroclaw Assistant.")
+    print(
+        "I can provide parking information, help you create a reservation request, "
+        "or cancel an upcoming reservation."
+    )
+    print("Type 'exit' to quit.")
 
     session = {
         "reservation_active": False,
