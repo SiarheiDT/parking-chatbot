@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from pathlib import Path
+import re
 from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -10,6 +11,9 @@ from app.config import get_config
 from app.db.connection import get_connection
 from app.db.repositories import (
     cancel_upcoming_reservation_by_plate,
+    count_active_reservations_overlapping,
+    find_first_available_slot,
+    get_concurrent_capacity,
     has_overlapping_active_reservation,
     save_reservation,
 )
@@ -26,6 +30,7 @@ SUPPORTED_DATETIME_FORMATS = (
     "%d/%m/%Y %I:%M%p",
     "%d/%m/%Y %I:%M %p",
 )
+TIME_ONLY_FORMATS = ("%H:%M", "%H")
 
 FLOW_ABORT_KEYWORDS = {
     "stop",
@@ -98,7 +103,10 @@ def handle_info(query: str) -> str:
     if "price" in q or "cost" in q or "tariff" in q:
         return _get_prices(config.DB_PATH)
 
-    if "available" in q or "availability" in q or "free spaces" in q:
+    if _looks_like_availability_question(q):
+        requested_dt = _extract_availability_datetime(query)
+        if requested_dt is not None:
+            return _get_availability_for_datetime(config.DB_PATH, requested_dt)
         return _get_availability(config.DB_PATH)
 
     docs = retrieve(query, top_k=config.TOP_K)
@@ -175,6 +183,38 @@ def _get_prices(db_path: Path) -> str:
     )
 
 
+def _looks_like_availability_question(q: str) -> bool:
+    """
+    Detect questions about free capacity / spots (not static FAQ about total capacity only).
+    """
+    if any(
+        phrase in q
+        for phrase in (
+            "available",
+            "availability",
+            "free space",
+            "free spaces",
+            "free place",
+            "free places",
+            "free spot",
+            "free spots",
+            "any space",
+            "any spaces",
+            "any place",
+            "any places",
+            "spaces left",
+            "spots left",
+            "place left",
+            "places left",
+            "room to park",
+        )
+    ):
+        return True
+    if re.search(r"\b(do you have|is there|are there)\b.+\b(free|available)\b", q):
+        return True
+    return False
+
+
 def _get_availability(db_path: Path) -> str:
     connection = get_connection(db_path)
     cursor = connection.cursor()
@@ -194,6 +234,123 @@ def _get_availability(db_path: Path) -> str:
 
     available_spaces, updated_at = row
     return f"Currently, {available_spaces} parking spaces are available. Last updated at: {updated_at}."
+
+
+def _normalize_availability_query_text(query: str) -> str:
+    text = " ".join(query.lower().strip().split())
+    for wrong, fixed in (("tommorow", "tomorrow"), ("tommorrow", "tomorrow")):
+        text = text.replace(wrong, fixed)
+    return text
+
+
+def _parse_clock_with_am_pm(text: str) -> tuple[int, int] | None:
+    """
+    Parse times like 1:00 PM, 1.00 PM, 1 PM into 24h (hour, minute).
+    """
+    m = re.search(r"\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)\b", text)
+    if not m:
+        return None
+    hour = int(m.group(1))
+    minute = int(m.group(2) or 0)
+    ampm = m.group(3)
+    if ampm == "pm":
+        if hour != 12:
+            hour += 12
+    else:
+        if hour == 12:
+            hour = 0
+    if hour > 23 or minute > 59:
+        return None
+    return hour, minute
+
+
+def _extract_availability_datetime(query: str) -> datetime | None:
+    normalized = _normalize_availability_query_text(query)
+    now = datetime.now()
+    base_date = now.date()
+
+    if "tomorrow" in normalized or "завтра" in normalized:
+        base_date = (now + timedelta(days=1)).date()
+    elif "today" in normalized or "сегодня" in normalized:
+        base_date = now.date()
+
+    datetime_match = re.search(r"\b(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2})\b", normalized)
+    if datetime_match:
+        dt = _normalize_datetime_input(datetime_match.group(1))
+        if dt:
+            return datetime.strptime(dt, "%Y-%m-%d %H:%M")
+
+    date_time_match = re.search(
+        r"\b(\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b",
+        normalized,
+    )
+    if date_time_match:
+        dt = _normalize_datetime_input(date_time_match.group(1))
+        if dt:
+            return datetime.strptime(dt, "%Y-%m-%d %H:%M")
+
+    am_pm = _parse_clock_with_am_pm(normalized)
+    if am_pm is not None:
+        hour, minute = am_pm
+        return datetime.combine(base_date, time(hour=hour, minute=minute))
+
+    time_match = re.search(
+        r"\b(?:at|в|,)\s*(\d{1,2}(?::\d{2})?)\b(?!\s*(?:am|pm)\b)",
+        normalized,
+    )
+    if not time_match:
+        time_match = re.search(r"\b(\d{1,2}(?::\d{2})?)\b", normalized)
+
+    if not time_match:
+        return None
+
+    raw_time = time_match.group(1)
+    parsed_time = None
+    for fmt in TIME_ONLY_FORMATS:
+        try:
+            parsed_time = datetime.strptime(raw_time, fmt).time()
+            break
+        except ValueError:
+            continue
+    if parsed_time is None:
+        return None
+
+    return datetime.combine(base_date, parsed_time).replace(second=0, microsecond=0)
+
+
+def _get_availability_for_datetime(db_path: Path, target_dt: datetime) -> str:
+    start = target_dt.replace(second=0, microsecond=0)
+    end = start + timedelta(hours=1)
+    start_str = start.strftime("%Y-%m-%d %H:%M")
+    end_str = end.strftime("%Y-%m-%d %H:%M")
+
+    capacity = get_concurrent_capacity(db_path)
+    if capacity <= 0:
+        return "Availability check is temporarily unavailable because parking capacity is not configured."
+
+    overlapping = count_active_reservations_overlapping(db_path, start_str, end_str)
+    free_spaces = max(0, capacity - overlapping)
+    if free_spaces > 0:
+        return f"Yes, there are free spaces at {start_str}. Estimated free spaces: {free_spaces}."
+
+    suggestion = find_first_available_slot(
+        db_path,
+        start_str,
+        end_str,
+        step_minutes=config.PARKING_SLOT_STEP_MINUTES,
+        max_search_days=config.PARKING_SLOT_SEARCH_MAX_DAYS,
+    )
+    if suggestion:
+        suggested_start, suggested_end = suggestion
+        return (
+            f"No free spaces are available at {start_str}. "
+            f"The first available 1-hour slot is {suggested_start} to {suggested_end}."
+        )
+
+    return (
+        f"No free spaces are available at {start_str}, and no 1-hour alternative slot was found "
+        f"within the next {config.PARKING_SLOT_SEARCH_MAX_DAYS} days."
+    )
 
 
 def _normalize_datetime_input(value: str) -> str | None:
@@ -282,6 +439,49 @@ def handle_reservation(session: dict[str, Any], user_input: str | None = None) -
                 "An active reservation for this car plate already overlaps with the requested period. "
                 "Please provide a different reservation start date and time "
                 "(format: YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM)."
+            )
+
+        capacity = get_concurrent_capacity(config.DB_PATH)
+        overlapping = count_active_reservations_overlapping(
+            config.DB_PATH,
+            session["data"]["start_datetime"],
+            normalized_end,
+        )
+        if capacity <= 0:
+            session["data"].pop("start_datetime", None)
+            session["data"].pop("end_datetime", None)
+            session["step"] = "start_datetime"
+            return (
+                "Parking capacity is not configured. Please contact support. "
+                "Enter a new reservation start date and time when resolved "
+                "(format: YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM)."
+            )
+
+        if overlapping >= capacity:
+            suggested = find_first_available_slot(
+                config.DB_PATH,
+                session["data"]["start_datetime"],
+                normalized_end,
+                step_minutes=config.PARKING_SLOT_STEP_MINUTES,
+                max_search_days=config.PARKING_SLOT_SEARCH_MAX_DAYS,
+            )
+            session["data"].pop("start_datetime", None)
+            session["data"].pop("end_datetime", None)
+            session["step"] = "start_datetime"
+            if suggested:
+                s_start, s_end = suggested
+                return (
+                    "No parking spaces are available for that time. "
+                    f"The next available slot with the same duration is: {s_start} to {s_end}. "
+                    "Please enter a new reservation start date and time "
+                    "(you can use the suggested start time). "
+                    "Formats: YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM."
+                )
+            return (
+                "No parking spaces are available for that time, and no alternative slot was found "
+                f"within the next {config.PARKING_SLOT_SEARCH_MAX_DAYS} days. "
+                "Please try different dates. "
+                "Formats: YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM."
             )
 
         save_reservation(

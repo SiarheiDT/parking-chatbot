@@ -33,6 +33,10 @@ class Config:
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
 
+    # Reservation capacity search
+    PARKING_SLOT_STEP_MINUTES: int
+    PARKING_SLOT_SEARCH_MAX_DAYS: int
+
 
 def get_config() -> Config:
     return Config(
@@ -48,4 +52,6 @@ def get_config() -> Config:
         WEAVIATE_COLLECTION_NAME=os.getenv("WEAVIATE_COLLECTION_NAME", "ParkingDoc"),
         CHUNK_SIZE=int(os.getenv("CHUNK_SIZE", "700")),
         CHUNK_OVERLAP=int(os.getenv("CHUNK_OVERLAP", "100")),
+        PARKING_SLOT_STEP_MINUTES=int(os.getenv("PARKING_SLOT_STEP_MINUTES", "30")),
+        PARKING_SLOT_SEARCH_MAX_DAYS=int(os.getenv("PARKING_SLOT_SEARCH_MAX_DAYS", "14")),
     )
