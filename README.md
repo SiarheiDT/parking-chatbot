@@ -8,7 +8,7 @@ Implemented requirements for Stage 1:
 - RAG-based chatbot architecture.
 - Vector database integration (Weaviate).
 - Interactive reservation flow (first name, last name, car plate, start/end datetime).
-- Guardrails to block sensitive/private requests.
+- Guardrails: regex for structured PII-style patterns plus semantic analysis with a pre-trained SentenceTransformer (`EMBEDDING_MODEL_NAME`) against sensitive-intent reference phrases; phrase matching for private/internal requests.
 - Retrieval evaluation metrics (Recall@K, Precision@K, Hit Rate).
 - Performance evaluation metrics (latency avg/p50/p95/max).
 - Automated tests with `pytest`.

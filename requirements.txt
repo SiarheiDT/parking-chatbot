@@ -5,8 +5,9 @@ python-dotenv
 langchain-text-splitters
 langgraph
 
-# Embeddings
+# Embeddings / guardrails semantic NLP
 sentence-transformers
+numpy
 
 # Testing
 pytest

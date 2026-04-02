@@ -37,6 +37,10 @@ class Config:
     PARKING_SLOT_STEP_MINUTES: int
     PARKING_SLOT_SEARCH_MAX_DAYS: int
 
+    # Guardrails — pre-trained transformer (SentenceTransformer) semantic check
+    GUARDRAILS_SEMANTIC_ENABLED: bool
+    GUARDRAILS_SEMANTIC_THRESHOLD: float
+
 
 def get_config() -> Config:
     return Config(
@@ -54,4 +58,7 @@ def get_config() -> Config:
         CHUNK_OVERLAP=int(os.getenv("CHUNK_OVERLAP", "100")),
         PARKING_SLOT_STEP_MINUTES=int(os.getenv("PARKING_SLOT_STEP_MINUTES", "30")),
         PARKING_SLOT_SEARCH_MAX_DAYS=int(os.getenv("PARKING_SLOT_SEARCH_MAX_DAYS", "14")),
+        GUARDRAILS_SEMANTIC_ENABLED=os.getenv("GUARDRAILS_SEMANTIC_ENABLED", "true").lower()
+        in ("1", "true", "yes"),
+        GUARDRAILS_SEMANTIC_THRESHOLD=float(os.getenv("GUARDRAILS_SEMANTIC_THRESHOLD", "0.52")),
     )
