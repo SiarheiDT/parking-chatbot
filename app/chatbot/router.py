@@ -53,9 +53,17 @@ def classify_intent(query: str) -> Literal["reservation", "cancel", "info"]:
     """
     Very simple intent classification for Stage 1.
     """
-    q = query.lower()
+    q = query.lower().strip()
 
-    if "cancel" in q:
+    cancel_keywords = [
+        "cancel reservation",
+        "cancel booking",
+        "cancel my booking",
+        "cancel my reservation",
+        "cancel operation",
+        "cancel current operation",
+    ]
+    if q == "cancel" or any(keyword in q for keyword in cancel_keywords):
         return "cancel"
 
     reservation_keywords = [
@@ -72,16 +80,6 @@ def classify_intent(query: str) -> Literal["reservation", "cancel", "info"]:
 
     if any(keyword in q for keyword in reservation_keywords):
         return "reservation"
-
-    cancel_keywords = [
-        "cancel reservation",
-        "cancel booking",
-        "cancel my booking",
-        "cancel my reservation",
-        "cancel",
-    ]
-    if any(keyword in q for keyword in cancel_keywords):
-        return "cancel"
 
     return "info"
 

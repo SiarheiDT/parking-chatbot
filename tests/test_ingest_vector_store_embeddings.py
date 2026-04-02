@@ -29,7 +29,9 @@ def test_ingest_skips_when_no_documents(mock_store_cls) -> None:
 def test_embed_text_returns_python_list() -> None:
     mocked_vector = MagicMock()
     mocked_vector.tolist.return_value = [0.1, 0.2]
-    with patch.object(embeddings.model, "encode", return_value=mocked_vector):
+    fake_model = MagicMock()
+    fake_model.encode.return_value = mocked_vector
+    with patch("app.rag.embeddings._get_model", return_value=fake_model):
         result = embeddings.embed_text("hello")
     assert result == [0.1, 0.2]
 
@@ -37,9 +39,11 @@ def test_embed_text_returns_python_list() -> None:
 def test_embed_text_passes_input_to_model_encode() -> None:
     mocked_vector = MagicMock()
     mocked_vector.tolist.return_value = [1.0]
-    with patch.object(embeddings.model, "encode", return_value=mocked_vector) as mock_encode:
+    fake_model = MagicMock()
+    fake_model.encode.return_value = mocked_vector
+    with patch("app.rag.embeddings._get_model", return_value=fake_model):
         _ = embeddings.embed_text("parking question")
-    mock_encode.assert_called_once_with("parking question")
+    fake_model.encode.assert_called_once_with("parking question")
 
 
 @patch("app.rag.vector_store.weaviate.connect_to_custom")

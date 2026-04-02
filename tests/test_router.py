@@ -57,3 +57,23 @@ def test_route_drops_dangling_markdown_header_without_answer(mock_retrieve) -> N
     response = route("Are there electric vehicle charging stations?", session)
     assert "EV charging stations are available" in response
     assert "## Are there spaces for disabled drivers?" not in response
+
+
+@patch("app.chatbot.router.retrieve")
+def test_route_keeps_info_intent_for_cancellation_policy_question(mock_retrieve) -> None:
+    mock_retrieve.return_value = [
+        {
+            "page_content": "Cancellations are possible before the reservation start time.",
+            "metadata": {"source": "faq.md"},
+        }
+    ]
+    session = {
+        "reservation_active": False,
+        "step": None,
+        "data": {},
+        "cancel_active": False,
+        "cancel_step": None,
+    }
+
+    response = route("What is the cancellation policy?", session)
+    assert "cancellations are possible" in response.lower()

@@ -29,7 +29,7 @@ User
 ## Tech Stack
 
 - Python 3.10+
-- LangChain
+- LangChain text splitters
 - LangGraph
 - Weaviate
 - Sentence Transformers (`all-MiniLM-L6-v2`)

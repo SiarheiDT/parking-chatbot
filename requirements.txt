@@ -1,23 +1,15 @@
 # Config
 python-dotenv
 
-# LLM / RAG
-langchain
+# RAG / Orchestration
 langchain-text-splitters
 langgraph
-langchain-community
-openai
-tiktoken
 
-# Embeddings (optional but recommended)
+# Embeddings
 sentence-transformers
 
 # Testing
 pytest
 
-#Vector database
+# Vector database
 weaviate-client
-
-sentence-transformers
-
-
