@@ -1,5 +1,9 @@
 from unittest.mock import patch
 
+import pytest
+
+pytestmark = pytest.mark.stage1
+
 from app.guardrails.filter import contains_sensitive_data, is_blocked_request
 
 

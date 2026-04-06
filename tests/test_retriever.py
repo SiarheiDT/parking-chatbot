@@ -1,5 +1,9 @@
 from unittest.mock import patch
 
+import pytest
+
+pytestmark = pytest.mark.stage1
+
 from app.rag.retriever import retrieve
 
 

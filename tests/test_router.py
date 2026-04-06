@@ -3,6 +3,10 @@ from unittest.mock import patch
 
 import sqlite3
 
+import pytest
+
+pytestmark = pytest.mark.stage1
+
 from app.chatbot.router import route
 from app.db.init_db import initialize_database
 from app.db.repositories import save_reservation

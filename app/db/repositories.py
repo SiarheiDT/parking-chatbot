@@ -2,11 +2,23 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Final
+from typing import Final, TypedDict
 
 from app.db.connection import get_connection
 
 ACTIVE_RESERVATION_STATUSES: Final[tuple[str, ...]] = ("pending", "confirmed")
+
+ADMIN_DECISION_STATUSES: Final[tuple[str, ...]] = ("confirmed", "rejected")
+
+
+class ReservationRecord(TypedDict):
+    id: int
+    first_name: str
+    last_name: str
+    car_plate: str
+    start_datetime: str
+    end_datetime: str
+    status: str
 
 _DATETIME_FMT: Final[str] = "%Y-%m-%d %H:%M"
 
@@ -102,9 +114,10 @@ def save_reservation(
     car_plate: str,
     start_datetime: str,
     end_datetime: str,
-) -> None:
+) -> int:
     """
     Save a reservation request into the SQLite database.
+    Returns the new row id (for Stage 2 admin escalation).
     """
     connection = get_connection(db_path)
     cursor = connection.cursor()
@@ -132,7 +145,92 @@ def save_reservation(
     )
 
     connection.commit()
+    new_id = int(cursor.lastrowid)
     connection.close()
+    return new_id
+
+
+def get_reservation_by_id(db_path: Path, reservation_id: int) -> ReservationRecord | None:
+    connection = get_connection(db_path)
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT id, first_name, last_name, car_plate, start_datetime, end_datetime, status
+        FROM reservations
+        WHERE id = ?
+        """,
+        (reservation_id,),
+    )
+    row = cursor.fetchone()
+    connection.close()
+    if row is None:
+        return None
+    return ReservationRecord(
+        id=int(row[0]),
+        first_name=str(row[1]),
+        last_name=str(row[2]),
+        car_plate=str(row[3]),
+        start_datetime=str(row[4]),
+        end_datetime=str(row[5]),
+        status=str(row[6]),
+    )
+
+
+def list_pending_reservations(db_path: Path, *, limit: int = 50) -> list[ReservationRecord]:
+    cap = max(1, min(limit, 500))
+    connection = get_connection(db_path)
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT id, first_name, last_name, car_plate, start_datetime, end_datetime, status
+        FROM reservations
+        WHERE status = 'pending'
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (cap,),
+    )
+    rows = cursor.fetchall()
+    connection.close()
+    return [
+        ReservationRecord(
+            id=int(r[0]),
+            first_name=str(r[1]),
+            last_name=str(r[2]),
+            car_plate=str(r[3]),
+            start_datetime=str(r[4]),
+            end_datetime=str(r[5]),
+            status=str(r[6]),
+        )
+        for r in rows
+    ]
+
+
+def update_reservation_status(
+    db_path: Path,
+    reservation_id: int,
+    new_status: str,
+) -> bool:
+    """
+    Admin decision: only pending -> confirmed or rejected.
+    """
+    if new_status not in ADMIN_DECISION_STATUSES:
+        return False
+
+    connection = get_connection(db_path)
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        UPDATE reservations
+        SET status = ?
+        WHERE id = ? AND status = 'pending'
+        """,
+        (new_status, reservation_id),
+    )
+    updated = cursor.rowcount > 0
+    connection.commit()
+    connection.close()
+    return updated
 
 
 def has_overlapping_active_reservation(

@@ -2,12 +2,20 @@
 python-dotenv
 
 # RAG / Orchestration
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
 langchain-text-splitters
 langgraph
 
 # Embeddings / guardrails semantic NLP
 sentence-transformers
 numpy
+
+# Stage 2 admin webhook
+fastapi
+uvicorn
+httpx
 
 # Testing
 pytest

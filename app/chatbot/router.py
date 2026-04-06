@@ -17,6 +17,7 @@ from app.db.repositories import (
     has_overlapping_active_reservation,
     save_reservation,
 )
+from app.notifications.telegram import notify_admin_new_reservation
 from app.guardrails.filter import contains_sensitive_data, is_blocked_request
 from app.rag.retriever import retrieve
 
@@ -269,9 +270,9 @@ def _extract_availability_datetime(query: str) -> datetime | None:
     now = datetime.now()
     base_date = now.date()
 
-    if "tomorrow" in normalized or "завтра" in normalized:
+    if "tomorrow" in normalized:
         base_date = (now + timedelta(days=1)).date()
-    elif "today" in normalized or "сегодня" in normalized:
+    elif "today" in normalized:
         base_date = now.date()
 
     datetime_match = re.search(r"\b(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2})\b", normalized)
@@ -295,7 +296,7 @@ def _extract_availability_datetime(query: str) -> datetime | None:
         return datetime.combine(base_date, time(hour=hour, minute=minute))
 
     time_match = re.search(
-        r"\b(?:at|в|,)\s*(\d{1,2}(?::\d{2})?)\b(?!\s*(?:am|pm)\b)",
+        r"\b(?:at|,)\s*(\d{1,2}(?::\d{2})?)\b(?!\s*(?:am|pm)\b)",
         normalized,
     )
     if not time_match:
@@ -484,13 +485,22 @@ def handle_reservation(session: dict[str, Any], user_input: str | None = None) -
                 "Formats: YYYY-MM-DD HH:MM or DD/MM/YYYY HH:MM or DD/MM/YYYY H:MMAM."
             )
 
-        save_reservation(
+        new_id = save_reservation(
             db_path=config.DB_PATH,
             first_name=session["data"]["first_name"],
             last_name=session["data"]["last_name"],
             car_plate=session["data"]["car_plate"],
             start_datetime=session["data"]["start_datetime"],
             end_datetime=session["data"]["end_datetime"],
+        )
+        notify_admin_new_reservation(
+            new_id,
+            session["data"]["first_name"],
+            session["data"]["last_name"],
+            session["data"]["car_plate"],
+            session["data"]["start_datetime"],
+            session["data"]["end_datetime"],
+            config=config,
         )
 
         session["reservation_active"] = False

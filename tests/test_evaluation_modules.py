@@ -2,6 +2,10 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+pytestmark = pytest.mark.stage1
+
 from app.evaluation import latency_eval, retrieval_eval
 
 

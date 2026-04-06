@@ -1,5 +1,9 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+pytestmark = pytest.mark.stage1
+
 from app.rag import embeddings, ingest, vector_store
 
 

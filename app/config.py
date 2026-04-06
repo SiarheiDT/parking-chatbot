@@ -41,6 +41,19 @@ class Config:
     GUARDRAILS_SEMANTIC_ENABLED: bool
     GUARDRAILS_SEMANTIC_THRESHOLD: float
 
+    # Stage 2 — Telegram admin notifications (optional; empty = disabled)
+    TELEGRAM_BOT_TOKEN: str
+    TELEGRAM_ADMIN_CHAT_ID: str
+    TELEGRAM_API_BASE: str
+    # POST /telegram/webhook/<secret> must match; empty disables webhook validation (not for production)
+    TELEGRAM_WEBHOOK_SECRET: str
+
+    # Stage 2 — how admin Confirm/Reject is executed (see app/stage2/admin_agent.py)
+    # direct: no LLM (default, tests/CI). langchain_tools: OpenAI tool-calling agent.
+    STAGE2_ADMIN_HANDLER: str
+    # Model for the admin agent; defaults to MODEL_NAME when empty
+    ADMIN_AGENT_MODEL: str
+
 
 def get_config() -> Config:
     return Config(
@@ -61,4 +74,17 @@ def get_config() -> Config:
         GUARDRAILS_SEMANTIC_ENABLED=os.getenv("GUARDRAILS_SEMANTIC_ENABLED", "true").lower()
         in ("1", "true", "yes"),
         GUARDRAILS_SEMANTIC_THRESHOLD=float(os.getenv("GUARDRAILS_SEMANTIC_THRESHOLD", "0.52")),
+        TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+        TELEGRAM_ADMIN_CHAT_ID=os.getenv("TELEGRAM_ADMIN_CHAT_ID", ""),
+        TELEGRAM_API_BASE=os.getenv("TELEGRAM_API_BASE", "https://api.telegram.org"),
+        TELEGRAM_WEBHOOK_SECRET=os.getenv("TELEGRAM_WEBHOOK_SECRET", ""),
+        STAGE2_ADMIN_HANDLER=_normalize_stage2_handler(os.getenv("STAGE2_ADMIN_HANDLER", "direct")),
+        ADMIN_AGENT_MODEL=os.getenv("ADMIN_AGENT_MODEL", "").strip(),
     )
+
+
+def _normalize_stage2_handler(raw: str) -> str:
+    v = (raw or "direct").strip().lower()
+    if v in ("langchain", "langchain_tools", "agent", "tools"):
+        return "langchain_tools"
+    return "direct"

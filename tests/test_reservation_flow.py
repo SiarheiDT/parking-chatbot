@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.stage1
+
 from app.chatbot.router import route
 from unittest.mock import patch
 from app.db.init_db import initialize_database
@@ -256,7 +260,8 @@ def test_abort_alias_quit_resets_reservation_flow() -> None:
     assert session["data"] == {}
 
 
-def test_reservation_end_to_end_overlap_then_success(tmp_path) -> None:
+@patch("app.chatbot.router.notify_admin_new_reservation", return_value=True)
+def test_reservation_end_to_end_overlap_then_success(_mock_notify, tmp_path) -> None:
     db_path = tmp_path / "test_parking.db"
     initialize_database(db_path)
     original_db_path = router_module.config.DB_PATH

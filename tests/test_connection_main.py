@@ -1,6 +1,10 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+pytestmark = pytest.mark.stage1
+
 from app.db.connection import get_connection
 from app.main import main
 
