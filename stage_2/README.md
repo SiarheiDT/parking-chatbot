@@ -25,17 +25,19 @@ All **Python implementation** lives under the shared package **`app/`** (same re
 1. **Done:** `app/db/repositories.py` — `save_reservation` returns new `id`; `get_reservation_by_id`, `list_pending_reservations`, `update_reservation_status` (`pending` → `confirmed` | `rejected`) for admin flow.
 2. **Done:** `app/config.py` + `.env.example` — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID`, optional `TELEGRAM_API_BASE`. `app/notifications/telegram.py` — `send_telegram_message` / `telegram_is_configured` (stdlib `urllib`, no extra deps).
 3. **Done:** After `save_reservation`, `notify_admin_new_reservation` sends Telegram text + **Confirm / Reject** inline buttons. FastAPI webhook `app/stage2/webhook_app.py` — `POST /telegram/webhook/<TELEGRAM_WEBHOOK_SECRET>` handles `callback_query`, updates DB (`confirmed` / `rejected`), answers callback, clears keyboard. Run: `uvicorn app.stage2.webhook_app:app --host 0.0.0.0 --port 9090`.
-4. **Next:** LangChain admin agent + tools; optional ngrok + `setWebhook` notes in README; Terraform for admin service.
+4. **Done:** `app/stage2/admin_agent.py` — second LangChain admin agent with tools (`get_reservation_details`, `apply_admin_decision`, `finalize_telegram_callback`) enabled by `STAGE2_ADMIN_HANDLER=langchain_tools` with fallback to `direct`.
+5. **Done:** Separate Terraform stack in `stage_2/terraform/` for Stage 2 admin webhook runtime (distinct from Stage 1 Weaviate Terraform in `infra/terraform/local/`).
 
 ## Link to code
 
-After implementation, document here the modules under `app/`, for example:
+Implemented modules under `app/`:
 
-- `app/admin_agent/` — LangChain agent + tools  
-- `app/admin_api/` — FastAPI webhook for approve/reject *(if used)*  
-- `app/notifications/` — email or HTTP client  
+- `app/stage2/admin_agent.py` — LangChain admin agent + tools
+- `app/stage2/webhook_app.py` — FastAPI webhook for approve/reject callbacks
+- `app/notifications/telegram.py` — Telegram client for notify/callback APIs
 
 Run commands (to be updated when code exists):
 
 - Stage 1 user chat: `python -m app.main`
-- Stage 2 admin service: *(add command, e.g. `uvicorn app.admin_api:app`)*
+- Stage 2 admin service: `uvicorn app.stage2.webhook_app:app --host 0.0.0.0 --port 9090`
+- Stage 2 Terraform checks: `cd stage_2/terraform && terraform init && terraform validate && terraform plan`
