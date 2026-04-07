@@ -27,6 +27,7 @@ All **Python implementation** lives under the shared package **`app/`** (same re
 3. **Done:** After `save_reservation`, `notify_admin_new_reservation` sends Telegram text + **Confirm / Reject** inline buttons. FastAPI webhook `app/stage2/webhook_app.py` — `POST /telegram/webhook/<TELEGRAM_WEBHOOK_SECRET>` handles `callback_query`, updates DB (`confirmed` / `rejected`), answers callback, clears keyboard. Run: `uvicorn app.stage2.webhook_app:app --host 0.0.0.0 --port 9090`.
 4. **Done:** `app/stage2/admin_agent.py` — second LangChain admin agent with tools (`get_reservation_details`, `apply_admin_decision`, `finalize_telegram_callback`) enabled by `STAGE2_ADMIN_HANDLER=langchain_tools` with fallback to `direct`.
 5. **Done:** Separate Terraform stack in `stage_2/terraform/` for Stage 2 admin webhook runtime (distinct from Stage 1 Weaviate Terraform in `infra/terraform/local/`).
+6. **Done (Stage 3):** `app/stage3/mcp_server.py` and `app/stage3/mcp_client.py` — once reservation is confirmed, payload is sent to MCP-like service and appended to text storage (`Name | Car Number | Reservation Period | Approval Time`).
 
 ## Link to code
 
@@ -41,3 +42,4 @@ Run commands (to be updated when code exists):
 - Stage 1 user chat: `python -m app.main`
 - Stage 2 admin service: `uvicorn app.stage2.webhook_app:app --host 0.0.0.0 --port 9090`
 - Stage 2 Terraform checks: `cd stage_2/terraform && terraform init && terraform validate && terraform plan`
+- Stage 3 MCP server: `uvicorn app.stage3.mcp_server:app --host 0.0.0.0 --port 9191`
