@@ -20,13 +20,14 @@ import os
 from fastapi import FastAPI, HTTPException, Request
 
 from app.config import Config, get_config
-from app.db.repositories import update_reservation_status
+from app.db.repositories import get_reservation_by_id, update_reservation_status
 from app.notifications.telegram import (
     answer_callback_query,
     clear_inline_keyboard,
     parse_reservation_callback_data,
 )
 from app.stage2 import admin_agent
+from app.stage3.mcp_client import send_confirmed_reservation_to_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,8 @@ async def telegram_webhook(secret: str, request: Request) -> dict[str, bool]:
         return {"ok": True}
 
     rid, new_status = parsed
+    before = get_reservation_by_id(cfg.DB_PATH, rid)
+    stage3_sent = False
     use_agent = cfg.STAGE2_ADMIN_HANDLER == "langchain_tools" and bool(
         (os.getenv("OPENAI_API_KEY") or "").strip()
     )
@@ -85,13 +88,21 @@ async def telegram_webhook(secret: str, request: Request) -> dict[str, bool]:
                 "Stage2 admin LangChain agent failed; falling back to direct handler (reservation_id=%s)",
                 rid,
             )
-            _finalize_reservation_callback_direct(cfg, rid, new_status, cq_id, chat_id, message_id)
+            updated = _finalize_reservation_callback_direct(cfg, rid, new_status, cq_id, chat_id, message_id)
+            _maybe_send_confirmed_to_stage3(cfg, rid, updated, new_status)
+            stage3_sent = updated and new_status == "confirmed"
     else:
         if cfg.STAGE2_ADMIN_HANDLER == "langchain_tools" and not (os.getenv("OPENAI_API_KEY") or "").strip():
             logger.warning(
                 "STAGE2_ADMIN_HANDLER=langchain_tools but OPENAI_API_KEY is empty; using direct handler."
             )
-        _finalize_reservation_callback_direct(cfg, rid, new_status, cq_id, chat_id, message_id)
+        updated = _finalize_reservation_callback_direct(cfg, rid, new_status, cq_id, chat_id, message_id)
+        _maybe_send_confirmed_to_stage3(cfg, rid, updated, new_status)
+
+    if use_agent:
+        after = get_reservation_by_id(cfg.DB_PATH, rid)
+        if (not stage3_sent) and before and after and before["status"] == "pending" and after["status"] == "confirmed":
+            send_confirmed_reservation_to_mcp(after, config=cfg)
 
     return {"ok": True}
 
@@ -103,7 +114,7 @@ def _finalize_reservation_callback_direct(
     cq_id: str,
     chat_id: object,
     message_id: object,
-) -> None:
+) -> bool:
     updated = update_reservation_status(cfg.DB_PATH, rid, new_status)
     if updated:
         label = "confirmed" if new_status == "confirmed" else "rejected"
@@ -112,3 +123,13 @@ def _finalize_reservation_callback_direct(
             clear_inline_keyboard(str(chat_id), int(message_id), config=cfg)
     else:
         answer_callback_query(cq_id, "Not pending or unknown id.", config=cfg)
+    return updated
+
+
+def _maybe_send_confirmed_to_stage3(cfg: Config, rid: int, updated: bool, new_status: str) -> None:
+    if not updated or new_status != "confirmed":
+        return
+    row = get_reservation_by_id(cfg.DB_PATH, rid)
+    if row is None or row["status"] != "confirmed":
+        return
+    send_confirmed_reservation_to_mcp(row, config=cfg)

@@ -54,6 +54,13 @@ class Config:
     # Model for the admin agent; defaults to MODEL_NAME when empty
     ADMIN_AGENT_MODEL: str
 
+    # Stage 3 — MCP-like confirmed reservation persistence
+    STAGE3_MCP_ENABLED: bool
+    STAGE3_MCP_ENDPOINT: str
+    STAGE3_MCP_API_KEY: str
+    STAGE3_MCP_TIMEOUT_SECONDS: float
+    STAGE3_MCP_OUTPUT_FILE: Path
+
 
 def get_config() -> Config:
     return Config(
@@ -80,6 +87,16 @@ def get_config() -> Config:
         TELEGRAM_WEBHOOK_SECRET=os.getenv("TELEGRAM_WEBHOOK_SECRET", ""),
         STAGE2_ADMIN_HANDLER=_normalize_stage2_handler(os.getenv("STAGE2_ADMIN_HANDLER", "direct")),
         ADMIN_AGENT_MODEL=os.getenv("ADMIN_AGENT_MODEL", "").strip(),
+        STAGE3_MCP_ENABLED=os.getenv("STAGE3_MCP_ENABLED", "false").lower() in ("1", "true", "yes"),
+        STAGE3_MCP_ENDPOINT=os.getenv(
+            "STAGE3_MCP_ENDPOINT",
+            "http://localhost:9191/mcp/v1/confirmed-reservations",
+        ).strip(),
+        STAGE3_MCP_API_KEY=os.getenv("STAGE3_MCP_API_KEY", "").strip(),
+        STAGE3_MCP_TIMEOUT_SECONDS=float(os.getenv("STAGE3_MCP_TIMEOUT_SECONDS", "5")),
+        STAGE3_MCP_OUTPUT_FILE=Path(
+            os.getenv("STAGE3_MCP_OUTPUT_FILE", "data/processed/confirmed_reservations.txt")
+        ),
     )
 
 

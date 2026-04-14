@@ -14,10 +14,14 @@ Implemented requirements for Stage 1:
 - Automated tests with `pytest`.
 - CI and IaC artifacts (GitHub Actions + Terraform).
 
-## Stage 2 (artifacts layout)
+## Stage folders (strict separation)
 
-- **Code** for Stage 2 will live under the shared **`app/`** package (same repo as Stage 1).
-- **Non-code** materials: **`stage_2/`** — see [`stage_2/README.md`](stage_2/README.md) for scenarios, and subfolders **`stage_2/docs/`** (presentation / diagrams) and **`stage_2/terraform/`** (IaC for the admin-facing service).
+- Stage 1 artifacts: `stage_1/` → [`stage_1/README.md`](stage_1/README.md)
+- Stage 2 artifacts: `stage_2/` → [`stage_2/README.md`](stage_2/README.md)
+- Stage 3 artifacts: `stage_3/` → [`stage_3/README.md`](stage_3/README.md)
+- Stage 4 artifacts: `stage_4/` → [`stage_4/README.md`](stage_4/README.md)
+
+Implementation code remains in shared `app/` package, but docs/artifacts and stage narratives are split by stage folders.
 
 ## Architecture
 
@@ -58,6 +62,10 @@ tests/
 data/
 docker/
 infra/
+stage_1/
+stage_2/
+stage_3/
+stage_4/
 ```
 
 ## Run (Linux/WSL Recommended)
@@ -112,6 +120,50 @@ Register the webhook with Telegram (replace placeholders):
 
 More detail: [`stage_2/README.md`](stage_2/README.md).
 
+### Stage 3 — Process confirmed reservation via MCP server
+
+Stage 3 adds a dedicated MCP-like FastAPI service that stores confirmed reservations in a text file.
+
+Run the Stage 3 server (separate terminal):
+
+```bash
+uvicorn app.stage3.mcp_server:app --host 0.0.0.0 --port 9191
+```
+
+Set Stage 3 variables in `.env` (already documented in `.env.example`):
+
+- `STAGE3_MCP_ENABLED=true`
+- `STAGE3_MCP_ENDPOINT=http://localhost:9191/mcp/v1/confirmed-reservations`
+- `STAGE3_MCP_API_KEY=<strong-secret>`
+- `STAGE3_MCP_OUTPUT_FILE=data/processed/confirmed_reservations.txt`
+
+When admin approves a reservation (`confirmed`), Stage 2 webhook sends payload to Stage 3 server.
+File line format:
+
+`Name | Car Number | Reservation Period | Approval Time`
+
+More detail: [`stage_3/README.md`](stage_3/README.md).
+
+### Stage 4 — Unified orchestration via LangGraph
+
+Stage 4 adds a unified LangGraph pipeline over all components:
+
+- chatbot interaction
+- admin approval
+- confirmed data recording
+
+Main orchestrator:
+
+`app/stage4/orchestrator.py`
+
+Stage 4 API:
+
+```bash
+uvicorn app.stage4.service:app --host 0.0.0.0 --port 9292
+```
+
+More detail: [`stage_4/README.md`](stage_4/README.md).
+
 ## Evaluation
 
 ### Retrieval metrics
@@ -154,7 +206,29 @@ Run **Stage 2** only (Telegram notifications, webhook, LangChain admin tools):
 python -m pytest -m stage2 -v
 ```
 
-Markers are defined in `pytest.ini` (`stage1`, `stage2`).
+Run **Stage 3** only (MCP server/client persistence):
+
+```bash
+python -m pytest -m stage3 -v
+```
+
+Run **Stage 4** only (unified LangGraph orchestration):
+
+```bash
+python -m pytest -m stage4 -v
+```
+
+Run Stage 4 load smoke tests:
+
+```bash
+python - <<'PY'
+from app.stage4.load_test import run_stage4_load_test
+print(run_stage4_load_test(total_requests=20, workers=4, mode="chat_only"))
+print(run_stage4_load_test(total_requests=20, workers=4, mode="confirm_flow"))
+PY
+```
+
+Markers are defined in `pytest.ini` (`stage1`, `stage2`, `stage3`, `stage4`).
 
 Current tests cover:
 - router behavior

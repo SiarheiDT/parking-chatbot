@@ -138,3 +138,59 @@ def test_webhook_confirm_langchain_without_openai_key_falls_back_direct(
         r = client.post("/telegram/webhook/sec", json=body)
     assert r.status_code == 200
     assert get_reservation_by_id(db_path, rid)["status"] == "confirmed"
+
+
+def test_webhook_confirm_triggers_stage3_mcp_when_enabled(
+    client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "wh_stage3.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "sec")
+    monkeypatch.setenv("STAGE3_MCP_ENABLED", "true")
+    monkeypatch.setenv("STAGE3_MCP_API_KEY", "k1")
+    initialize_database(db_path)
+    rid = save_reservation(db_path, "A", "B", "P1", "2099-04-03 08:00", "2099-04-03 09:00")
+
+    body = {
+        "callback_query": {
+            "id": "999",
+            "data": f"rv:{rid}:c",
+            "message": {"chat": {"id": 111}, "message_id": 222},
+        }
+    }
+    with (
+        patch("app.stage2.webhook_app.answer_callback_query", return_value=True),
+        patch("app.stage2.webhook_app.clear_inline_keyboard", return_value=True),
+        patch("app.stage2.webhook_app.send_confirmed_reservation_to_mcp", return_value=True) as mcp_send,
+    ):
+        r = client.post("/telegram/webhook/sec", json=body)
+    assert r.status_code == 200
+    assert mcp_send.call_count == 1
+
+
+def test_webhook_reject_does_not_trigger_stage3_mcp(
+    client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "wh_stage3_reject.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "sec")
+    monkeypatch.setenv("STAGE3_MCP_ENABLED", "true")
+    monkeypatch.setenv("STAGE3_MCP_API_KEY", "k1")
+    initialize_database(db_path)
+    rid = save_reservation(db_path, "A", "B", "P2", "2099-04-03 10:00", "2099-04-03 11:00")
+
+    body = {
+        "callback_query": {
+            "id": "999",
+            "data": f"rv:{rid}:r",
+            "message": {"chat": {"id": 111}, "message_id": 222},
+        }
+    }
+    with (
+        patch("app.stage2.webhook_app.answer_callback_query", return_value=True),
+        patch("app.stage2.webhook_app.clear_inline_keyboard", return_value=True),
+        patch("app.stage2.webhook_app.send_confirmed_reservation_to_mcp", return_value=True) as mcp_send,
+    ):
+        r = client.post("/telegram/webhook/sec", json=body)
+    assert r.status_code == 200
+    assert mcp_send.call_count == 0
