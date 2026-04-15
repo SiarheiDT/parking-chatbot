@@ -36,3 +36,7 @@ uvicorn app.stage3.mcp_server:app --host 0.0.0.0 --port 9191
 ```bash
 python -m pytest -m stage3 -v
 ```
+
+## Terraform (Stage 3 only)
+
+Stage 3 infrastructure IaC is now in `stage_3/terraform/` and deploys MCP server runtime as Docker container.

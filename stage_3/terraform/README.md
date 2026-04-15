@@ -1,10 +1,33 @@
 # Stage 3 — Terraform
 
-Use this directory for Stage 3 infrastructure only.
+This Terraform stack deploys the Stage 3 MCP server as a Docker container.
 
-Examples:
+## What is provisioned
 
-- MCP server runtime deployment
-- storage/network/security resources used by Stage 3
+- Docker image reference for project runtime (`parking-chatbot:latest` by default)
+- Docker container running `uvicorn app.stage3.mcp_server:app` on port `9191`
+- Runtime environment variables required by Stage 3 server
 
-Do not mix Stage 1 or Stage 2 IaC resources in this folder.
+## Files
+
+- `main.tf` — provider + Docker resources
+- `variables.tf` — stack inputs
+- `outputs.tf` — container name and local URL outputs
+- `terraform.tfvars.example` — required example input for API key
+
+## Usage
+
+```bash
+cd stage_3/terraform
+cp terraform.tfvars.example terraform.tfvars
+# edit terraform.tfvars and set stage3_mcp_api_key
+terraform init
+terraform validate
+terraform plan
+terraform apply
+```
+
+## Notes
+
+- This stack is Stage 3 only; do not place Stage 1/2/4 infrastructure here.
+- Build `parking-chatbot:latest` image before `terraform apply` if image is not already present.

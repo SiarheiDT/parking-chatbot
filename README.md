@@ -246,6 +246,10 @@ Current tests cover:
 - Terraform workflow: `.github/workflows/terraform.yml`
   - `terraform fmt`, `init`, `validate`
 - Local Terraform example: `infra/terraform/local/`
+- Stage-specific Terraform stacks:
+  - Stage 2: `stage_2/terraform/` (admin webhook runtime)
+  - Stage 3: `stage_3/terraform/` (MCP server runtime)
+  - Stage 4: `stage_4/terraform/` (unified orchestration API runtime)
 
 ## Submission Checklist (Stage 1)
 

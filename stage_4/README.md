@@ -61,3 +61,7 @@ python -m pytest -m stage4 -v
 - Stage 1: chatbot/RAG flow
 - Stage 2: human-in-the-loop admin decision
 - Stage 3: MCP recording service
+
+## Terraform (Stage 4 only)
+
+Stage 4 infrastructure IaC is now in `stage_4/terraform/` and deploys unified orchestration API as Docker container.
